@@ -176,7 +176,7 @@ function App() {
                 <button onClick={() => setStep(1)} style={{background:'transparent', color:'var(--text-muted)', border:'none', cursor:'pointer', textDecoration:'underline'}}>Volver</button>
              </div>
              
-             <div className="grid grid-cols-3 gap-6">
+             <div className="grid-center gap-6">
                 {availableRooms.map(room => (
                   <div key={room.id} className="glass-card flex flex-col" style={{ padding: '0', overflow: 'hidden' }}>
                     <div style={{ height: '200px', width: '100%', backgroundImage: `url(${room.image})`, backgroundSize: 'cover', backgroundPosition: 'center' }}></div>
@@ -207,7 +207,7 @@ function App() {
             <h2 className="mb-4 text-center" style={{ fontSize: '1.8rem', fontWeight: 600 }}>Personaliza tu estadía</h2>
             <p className="text-center subtitle">Mejora tu experiencia con nuestros servicios premium.</p>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 mt-8">
+            <div className="grid-center gap-6 mb-8 mt-8">
               {availableExtras.map(extra => {
                  const isSelected = selectedExtraIds.includes(extra.id);
                  return (
