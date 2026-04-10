@@ -1,11 +1,9 @@
 import { RoomManager } from '../services/RoomManager';
 import type { Room } from '../services/RoomManager';
-import { PricingEngine } from '../services/PricingEngine';
 import { AdditionalServices } from '../services/AdditionalServices';
 import type { ExtraService } from '../services/AdditionalServices';
-import { BillingService } from '../services/BillingService';
 import type { Invoice } from '../services/BillingService';
-import { AccessControl } from '../services/AccessControl';
+import { apiRequest } from '../services/apiService';
 
 export interface ReservationRequest {
   customerName: string;
@@ -25,24 +23,16 @@ export interface ReservationResult {
 
 /**
  * HotelFacade simplifies all the internal subsystems (services) interactions.
- * The UI layer only needs to talk to this class.
+ * NOW UPDATED: Orchestrates calls to the Spring Boot backend.
  */
 export class HotelFacade {
   private roomManager: RoomManager;
-  private pricingEngine: PricingEngine;
   private additionalServices: AdditionalServices;
-  private billingService: BillingService;
-  private accessControl: AccessControl;
 
   constructor() {
     this.roomManager = new RoomManager();
-    this.pricingEngine = new PricingEngine();
     this.additionalServices = new AdditionalServices();
-    this.billingService = new BillingService();
-    this.accessControl = new AccessControl();
   }
-
-  // --- Simplified methods for UI components that only need partial data ---
 
   async fetchAvailableRooms(checkIn: Date, checkOut: Date): Promise<Room[]> {
     return this.roomManager.getAvailableRooms(checkIn, checkOut);
@@ -52,55 +42,75 @@ export class HotelFacade {
     return this.additionalServices.getAvailableExtras();
   }
 
-  // --- Complex transaction handled by Facade ---
-
   async processReservation(request: ReservationRequest): Promise<ReservationResult> {
     try {
-      // 1. Calculate duration
-      const durationMs = request.checkOut.getTime() - request.checkIn.getTime();
-      const durationDays = Math.max(1, Math.ceil(durationMs / (1000 * 60 * 60 * 24)));
+      // 1. Create the base reservation in the backend
+      const reserva = await apiRequest<any>('/api/hotel/reservar', {
+        method: 'POST',
+        body: JSON.stringify({
+          habitacionId: request.roomId,
+          clienteNombre: request.customerName,
+          clienteDocumento: 'DOC-' + Math.floor(Math.random() * 10000), // Random placeholder
+          fechaInicio: request.checkIn.toISOString().split('T')[0],
+          fechaFin: request.checkOut.toISOString().split('T')[0]
+        })
+      });
 
-      // 2. Validate Room
-      const room = await this.roomManager.getRoomById(request.roomId);
-      if (!room) {
-        throw new Error('Room not found or unavailable');
+      const reservaId = reserva.id;
+
+      // 2. Add extra services sequentially
+      for (const extraId of request.selectedExtraIds) {
+        await apiRequest(`/api/hotel/servicios/${reservaId}`, {
+          method: 'POST',
+          body: JSON.stringify({ tipoServicio: extraId })
+        });
       }
 
-      // 3. Dynamic Pricing Calculation
-      const pricingData = await this.pricingEngine.calculateDynamicPrice(
-        room.basePrice,
-        request.checkIn,
-        durationDays
-      );
+      // 3. Perform Check-in to generate the Digital Key
+      const reservaWithKey = await apiRequest<any>(`/api/hotel/checkin/${reservaId}`, {
+        method: 'PUT'
+      });
 
-      // 4. Extras calculation
-      const extrasTotal = await this.additionalServices.calculateExtrasCost(
-        request.selectedExtraIds,
-        durationDays
-      );
+      // 4. Perform Check-out to generate the Final Invoice
+      const backendFactura = await apiRequest<any>(`/api/hotel/checkout/${reservaId}`, {
+        method: 'PUT'
+      });
 
-      // 5. Final Billing
-      const invoice = await this.billingService.generateBilling(
-        pricingData.totalRoomPrice,
+      // Map backend Factura to frontend Invoice
+      const roomDetail = backendFactura.detalles.find((d: any) => d.descripcion.includes('Alojamiento'));
+      const extrasDetails = backendFactura.detalles.filter((d: any) => d.descripcion.includes('Servicio'));
+      
+      const roomTotal = roomDetail ? roomDetail.monto : 0;
+      const extrasTotal = extrasDetails.reduce((acc: number, d: any) => acc + d.monto, 0);
+      const subtotal = roomTotal + extrasTotal;
+      const taxes = subtotal * 0.16;
+      const grandTotal = subtotal + taxes;
+
+      const invoice: Invoice = {
+        roomTotal,
         extrasTotal,
-        pricingData.season
-      );
+        taxes,
+        grandTotal,
+        seasonText: 'Dynamic Season'
+      };
 
-      // 6. Book room & generate digital key
-      await this.roomManager.bookRoom(room.id);
-      const digitalKey = await this.accessControl.generateDigitalKey(room.id, request.customerName);
+      // 5. Get the room details for the final result
+      const room = await this.roomManager.getRoomById(request.roomId);
 
       return {
         success: true,
         invoice,
-        digitalKey,
+        digitalKey: reservaWithKey.llaveDigital,
         room
       };
+
     } catch (error: any) {
+      console.error('Reservation Error:', error);
       return {
         success: false,
-        error: error.message || 'Error processing reservation'
+        error: error.message || 'Error processing reservation on the backend'
       };
     }
   }
 }
+

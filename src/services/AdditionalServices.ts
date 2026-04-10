@@ -6,9 +6,9 @@ export interface ExtraService {
 
 export class AdditionalServices {
   private extras: ExtraService[] = [
-    { id: 'spa', name: 'Spa Access', pricePerDay: 50 },
-    { id: 'restaurant', name: 'Premium Dining Plan', pricePerDay: 120 },
-    { id: 'transport', name: 'Airport Transport (Daily)', pricePerDay: 40 },
+    { id: 'SPA', name: 'Spa Access', pricePerDay: 50 },
+    { id: 'DESAYUNO', name: 'Premium Breakfast', pricePerDay: 15 },
+    { id: 'TRASLADO', name: 'Airport Transport', pricePerDay: 40 },
   ];
 
   async getAvailableExtras(): Promise<ExtraService[]> {
@@ -29,3 +29,4 @@ export class AdditionalServices {
     });
   }
 }
+
